@@ -120,14 +120,14 @@ def monitor_all_jobs_parallel(submitted_jobs: List[Dict[str, Any]]) -> List[Dict
 
     results = []
     remaining_jobs = submitted_jobs.copy()
-    completed_job_ids = set()
-
     start_time = time.time()
 
     while remaining_jobs and (time.time() - start_time) < 1200:  # Max 20 minutes
         # Check all remaining jobs
+        status_by_job = {}
         for job_info in remaining_jobs[:]:
             status = get_job_status(job_info["job_id"])
+            status_by_job[job_info["job_id"]] = status
             if status:
                 state = status.get("state")
 
@@ -137,22 +137,20 @@ def monitor_all_jobs_parallel(submitted_jobs: List[Dict[str, Any]]) -> List[Dict
                     avg_score = summary.get("avg_score", 0)
                     print(f"✓ Completed: {job_info['name']} (took {elapsed:.1f}s, avg score: {avg_score:.2f})")
                     results.append(status)
-                    completed_job_ids.add(job_info["job_id"])
                     remaining_jobs.remove(job_info)
                 elif state == "failed":
                     error = status.get("error", "Unknown error")
                     elapsed = time.time() - job_info["submitted_at"]
                     print(f"✗ Failed: {job_info['name']} (took {elapsed:.1f}s) - {error}")
                     results.append(status)
-                    completed_job_ids.add(job_info["job_id"])
                     remaining_jobs.remove(job_info)
 
         if remaining_jobs:
-            in_progress = len([
-                j for j in remaining_jobs 
-                if get_job_status(j["job_id"]) and 
-                get_job_status(j["job_id"]).get("state") == "running"
-            ])
+            in_progress = sum(
+                1
+                for job_id in (job["job_id"] for job in remaining_jobs)
+                if status_by_job.get(job_id) and status_by_job[job_id].get("state") == "running"
+            )
             queued = len(remaining_jobs) - in_progress
             print(f"  Status: {in_progress} running, {queued} queued, {len(results)} completed")
             time.sleep(5)
@@ -273,4 +271,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
